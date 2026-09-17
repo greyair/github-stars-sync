@@ -1,0 +1,21 @@
+categories:
+  AI / Agent:
+    keywords: [ai, llm, agent, rag, mcp, copilot, prompt, inference]
+  开发工具:
+    keywords: [developer-tools, cli, sdk, ide, editor, compiler, debugger]
+  自托管 / 服务:
+    keywords: [self-hosted, selfhosted, homelab, server, dashboard]
+  DevOps / 云 / 网络:
+    keywords: [devops, docker, kubernetes, cloudflare, proxy, networking, terraform]
+  逆向 / 抓包 / 安全:
+    keywords: [reverse-engineering, frida, mitm, security, pentest, decompiler, packet]
+  游戏开发:
+    keywords: [game-dev, gamedev, unity, unreal, godot, modding]
+  前端 / Web:
+    keywords: [frontend, web, react, vue, svelte, nextjs, browser]
+  数据 / 数据库:
+    keywords: [database, sql, postgres, sqlite, analytics, data]
+  效率 / 桌面工具:
+    keywords: [productivity, desktop, windows, macos, launcher, automation]
+
+default: 稍后研究
