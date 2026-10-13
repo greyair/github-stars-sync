@@ -252,6 +252,8 @@ def main():
                 else:
                     status = github("GET", f"/repos/{canonical}/commits/{sha}/status").get("state", "")
                     ci = {"success": "通过", "failure": "失败", "pending": "进行中", "error": "失败"}.get(status, "未知")
+                    if status == "pending" and not github("GET", f"/repos/{canonical}/commits/{sha}/status").get("statuses"):
+                        ci = "未知"
             except Exception as exc:
                 WARNINGS.append(f"{canonical}: CI unavailable: {exc}")
             related_ids = set(related(page, "关联项目")) if page else set()
