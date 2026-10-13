@@ -8,6 +8,11 @@ on:
         type: boolean
         required: false
         default: true
+  push:
+    branches: [main]
+    paths:
+      - 'src/project_dashboard_sync.py'
+      - '.github/workflows/sync-project-dashboard.yml'
   schedule:
     - cron: "23 * * * *"
 
@@ -20,6 +25,7 @@ concurrency:
 
 jobs:
   sync:
+    if: github.event_name != 'schedule' || vars.PROJECT_DASHBOARD_SYNC_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -43,5 +49,5 @@ jobs:
           NOTION_DASHBOARD_PAGE_ID: 3de41bef-3e24-81dc-a0df-e891cc9e001c
           GITHUB_OWNER: greyair
           GITHUB_DISCOVERY_TOPIC: notion-managed
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: python src/project_dashboard_sync.py
