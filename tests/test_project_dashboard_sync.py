@@ -91,12 +91,72 @@ class DashboardSyncTests(unittest.TestCase):
         self.assertTrue(any(args[1] == "/blocks/caption-1" for args, _ in logs))
         self.assertTrue(any(args[1] == "/blocks/caption-3" for args, _ in logs))
 
-    def test_checks_permission_falls_back_to_commit_statuses(self):
-        fallback = [{"state": "success", "statuses": [{"state": "success"}]}]
-        with patch.object(sync, "github", side_effect=[RuntimeError("HTTP 403: Checks"), *fallback]):
+    @staticmethod
+    def workflow(workflow_id, conclusion, run_number=1, sha="deadbeef", status="completed"):
+        return {
+            "id": workflow_id * 1000 + run_number,
+            "workflow_id": workflow_id,
+            "run_number": run_number,
+            "run_attempt": 1,
+            "head_sha": sha,
+            "status": status,
+            "conclusion": conclusion,
+        }
+
+    def test_actions_success_and_commit_filter(self):
+        runs = [
+            self.workflow(1, "success"),
+            self.workflow(2, "success"),
+            self.workflow(3, "failure", sha="another-commit"),
+        ]
+        with patch.object(sync, "github", return_value={"workflow_runs": runs, "total_count": 3}) as gh:
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "通过")
+        self.assertEqual(gh.call_args.kwargs["params"]["head_sha"], "deadbeef")
+
+    def test_actions_failure_takes_precedence(self):
+        runs = [self.workflow(1, "success"), self.workflow(2, "failure")]
+        with patch.object(sync, "github", return_value={"workflow_runs": runs, "total_count": 2}):
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "失败")
+
+    def test_actions_running(self):
+        runs = [self.workflow(1, "success"), self.workflow(2, None, status="in_progress")]
+        with patch.object(sync, "github", return_value={"workflow_runs": runs, "total_count": 2}):
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "进行中")
+
+    def test_actions_latest_run_wins_for_each_workflow(self):
+        runs = [self.workflow(1, "failure", run_number=2),
+                self.workflow(1, "success", run_number=3)]
+        with patch.object(sync, "github", return_value={"workflow_runs": runs, "total_count": 2}):
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "通过")
+
+    def test_actions_pagination(self):
+        first = [self.workflow(n, "success") for n in range(1, 101)]
+        second = [self.workflow(101, "failure")]
+        with patch.object(sync, "github", side_effect=[
+                {"workflow_runs": first, "total_count": 101},
+                {"workflow_runs": second, "total_count": 101}]) as gh:
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "失败")
+            self.assertEqual(gh.call_count, 2)
+            self.assertEqual(gh.call_args.kwargs["params"]["page"], 2)
+
+    def test_actions_permission_falls_back_to_commit_statuses(self):
+        fallback = {"state": "success", "statuses": [{"state": "success"}]}
+        with patch.object(sync, "github", side_effect=[RuntimeError("HTTP 403: Actions"), fallback]):
             with patch.object(sync, "WARNINGS", []) as warnings:
                 self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "通过")
                 self.assertEqual(len(warnings), 1)
+
+    def test_no_actions_and_no_commit_status_is_unknown(self):
+        with patch.object(sync, "github", side_effect=[
+                {"workflow_runs": [], "total_count": 0},
+                {"state": "pending", "statuses": []}]):
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "未知")
+
+    def test_cancelled_only_without_commit_status_is_unknown(self):
+        with patch.object(sync, "github", side_effect=[
+                {"workflow_runs": [self.workflow(1, "cancelled")], "total_count": 1},
+                {"state": "pending", "statuses": []}]):
+            self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "未知")
 
     def test_missing_stat_card_fails(self):
         with patch.object(sync, "blocks", return_value=[]):
