@@ -201,8 +201,8 @@ def discover(projects, repo_pages):
             managed.setdefault(name.casefold(), (name, "Notion 项目", None))
     # Discovery is opt-in. No broad import of historical/forked repositories.
     try:
-        for repo in paginate_github(f"/users/{OWNER}/repos", {"type": "owner", "sort": "updated"}):
-            if repo.get("fork") or repo.get("archived"):
+        for repo in paginate_github("/user/repos", {"affiliation": "owner", "visibility": "all", "sort": "updated"}):
+            if repo.get("owner", {}).get("login", "").casefold() != OWNER.casefold() or repo.get("fork") or repo.get("archived"):
                 continue
             if TOPIC in (repo.get("topics") or []):
                 name = repo["full_name"]
