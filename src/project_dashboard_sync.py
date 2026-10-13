@@ -233,21 +233,10 @@ def discover(projects, repo_pages):
     return managed, explicit
 
 
-def read_ci(repository, sha):
-    path = f"/repos/{repository}/commits/{sha}"
+def read_commit_status_ci(repository, sha):
+    """Fallback for external CI providers using GitHub commit statuses."""
     try:
-        runs = github("GET", path + "/check-runs", params={"per_page": 100}).get("check_runs", [])
-    except Exception as exc:
-        WARNINGS.append(f"{repository}: Checks API unavailable: {exc}")
-        runs = []
-    if runs:
-        if any(run.get("status") != "completed" for run in runs):
-            return "进行中"
-        if all(run.get("conclusion") in ("success", "neutral", "skipped") for run in runs):
-            return "通过"
-        return "失败"
-    try:
-        result = github("GET", path + "/status")
+        result = github("GET", f"/repos/{repository}/commits/{sha}/status")
         statuses = result.get("statuses") or []
         if not statuses:
             return "未知"
@@ -256,6 +245,63 @@ def read_ci(repository, sha):
     except Exception as exc:
         WARNINGS.append(f"{repository}: Commit statuses unavailable: {exc}")
         return "未知"
+
+
+def read_ci(repository, sha):
+    """Use Actions runs on the tracked commit, then commit-status fallback.
+
+    A run list is scoped to head_sha to avoid displaying unrelated CI.
+    If a workflow was retried or rerun, evaluate only its latest run.
+    """
+    api_path = f"/repos/{repository}/actions/runs"
+    try:
+        first = github("GET", api_path, params={"head_sha": sha, "per_page": 100, "page": 1})
+        runs = first.get("workflow_runs") or []
+        total = first.get("total_count", len(runs))
+        if total > 300:
+            WARNINGS.append(f"{repository}: too many Actions runs for SHA; CI uncertain")
+            return read_commit_status_ci(repository, sha)
+        page = 2
+        while len(runs) < total and page <= 3:
+            additional = github("GET", api_path, params={"head_sha": sha, "per_page": 100, "page": page})
+            batch = additional.get("workflow_runs") or []
+            if not batch:
+                break
+            runs.extend(batch)
+            page += 1
+        if len(runs) < total:
+            WARNINGS.append(f"{repository}: incomplete Actions run listing")
+            return read_commit_status_ci(repository, sha)
+    except Exception as exc:
+        WARNINGS.append(f"{repository}: Actions API unavailable: {exc}")
+        return read_commit_status_ci(repository, sha)
+
+    # The same workflow may have several runs for this exact SHA. Retain its
+    # most recent run; different workflows still contribute to aggregate CI.
+    latest = {}
+    for run in runs:
+        if run.get("head_sha") != sha:
+            continue
+        key = run.get("workflow_id") or run.get("path") or run.get("name") or run.get("id")
+        order = (run.get("run_number") or 0, run.get("run_attempt") or 0,
+                 run.get("created_at") or "", run.get("id") or 0)
+        if key not in latest or order > latest[key][0]:
+            latest[key] = (order, run)
+
+    if not latest:
+        return read_commit_status_ci(repository, sha)
+
+    selected = [item[1] for item in latest.values()]
+    if any(run.get("status") != "completed" for run in selected):
+        return "进行中"
+    conclusions = {run.get("conclusion") for run in selected}
+    if conclusions & {"failure", "timed_out", "startup_failure", "action_required"}:
+        return "失败"
+    if conclusions <= {"success", "neutral", "skipped"} and "success" in conclusions:
+        return "通过"
+    # Cancelled or skipped-only workflows cannot be counted as successful.
+    return read_commit_status_ci(repository, sha)
+
 
 def main():
     for k in ("GH_PROJECTS_TOKEN", "NOTION_TOKEN"):
