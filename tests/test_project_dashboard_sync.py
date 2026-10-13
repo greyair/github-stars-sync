@@ -91,6 +91,13 @@ class DashboardSyncTests(unittest.TestCase):
         self.assertTrue(any(args[1] == "/blocks/caption-1" for args, _ in logs))
         self.assertTrue(any(args[1] == "/blocks/caption-3" for args, _ in logs))
 
+    def test_checks_permission_falls_back_to_commit_statuses(self):
+        fallback = [{"state": "success", "statuses": [{"state": "success"}]}]
+        with patch.object(sync, "github", side_effect=[RuntimeError("HTTP 403: Checks"), *fallback]):
+            with patch.object(sync, "WARNINGS", []) as warnings:
+                self.assertEqual(sync.read_ci("greyair/example", "deadbeef"), "通过")
+                self.assertEqual(len(warnings), 1)
+
     def test_missing_stat_card_fails(self):
         with patch.object(sync, "blocks", return_value=[]):
             with patch.object(sync, "WARNINGS", []):

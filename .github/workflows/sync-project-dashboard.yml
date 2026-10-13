@@ -51,7 +51,7 @@ jobs:
           NOTION_DASHBOARD_PAGE_ID: 3de41bef-3e24-81dc-a0df-e891cc9e001c
           GITHUB_OWNER: greyair
           GITHUB_DISCOVERY_TOPIC: notion-managed
-          DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
         run: python src/project_dashboard_sync.py
       - name: Publish safe smoke-test result as commit status
         if: always() && github.event_name == 'push'
@@ -61,14 +61,15 @@ jobs:
           GH_SHA: ${{ github.sha }}
           GH_RUN_ID: ${{ github.run_id }}
           SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          SYNC_MODE: live-write
         run: |
           python - <<'PY'
           import json, os, urllib.request
           ok = os.environ["SYNC_OUTCOME"] == "success"
           payload = {
               "state": "success" if ok else "failure",
-              "context": "notion-dashboard/dry-run",
-              "description": "Read-only sync verification passed" if ok else "Read-only sync verification failed; inspect Actions run",
+              "context": "notion-dashboard/" + os.environ["SYNC_MODE"],
+              "description": "Notion sync completed" if ok else "Notion sync failed; inspect Actions run",
               "target_url": "https://github.com/{}/actions/runs/{}".format(os.environ["GH_REPO"], os.environ["GH_RUN_ID"]),
           }
           url = "https://api.github.com/repos/{}/statuses/{}".format(os.environ["GH_REPO"], os.environ["GH_SHA"])

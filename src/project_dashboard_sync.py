@@ -232,6 +232,31 @@ def discover(projects, repo_pages):
         WARNINGS.append(f"Topic discovery unavailable: {exc}")
     return managed, explicit
 
+
+def read_ci(repository, sha):
+    path = f"/repos/{repository}/commits/{sha}"
+    try:
+        runs = github("GET", path + "/check-runs", params={"per_page": 100}).get("check_runs", [])
+    except Exception as exc:
+        WARNINGS.append(f"{repository}: Checks API unavailable: {exc}")
+        runs = []
+    if runs:
+        if any(run.get("status") != "completed" for run in runs):
+            return "进行中"
+        if all(run.get("conclusion") in ("success", "neutral", "skipped") for run in runs):
+            return "通过"
+        return "失败"
+    try:
+        result = github("GET", path + "/status")
+        statuses = result.get("statuses") or []
+        if not statuses:
+            return "未知"
+        return {"success": "通过", "failure": "失败",
+                "pending": "进行中", "error": "失败"}.get(result.get("state"), "未知")
+    except Exception as exc:
+        WARNINGS.append(f"{repository}: Commit statuses unavailable: {exc}")
+        return "未知"
+
 def main():
     for k in ("GH_PROJECTS_TOKEN", "NOTION_TOKEN"):
         if not os.getenv(k):
@@ -259,24 +284,9 @@ def main():
             message = commit["commit"]["message"].splitlines()[0]
             latest_date = commit["commit"]["committer"]["date"]
             prs = paginate_github(f"/repos/{canonical}/pulls", {"state": "open"})
-            # Commit-specific check-runs; use combined commit status as fallback if not enabled.
-            ci = "未知"
-            try:
-                checks = github("GET", f"/repos/{canonical}/commits/{sha}/check-runs", params={"per_page": 100}).get("check_runs", [])
-                if checks:
-                    if any(x.get("status") != "completed" for x in checks):
-                        ci = "进行中"
-                    elif all(x.get("conclusion") in ("success", "neutral", "skipped") for x in checks):
-                        ci = "通过"
-                    else:
-                        ci = "失败"
-                else:
-                    status = github("GET", f"/repos/{canonical}/commits/{sha}/status").get("state", "")
-                    ci = {"success": "通过", "failure": "失败", "pending": "进行中", "error": "失败"}.get(status, "未知")
-                    if status == "pending" and not github("GET", f"/repos/{canonical}/commits/{sha}/status").get("statuses"):
-                        ci = "未知"
-            except Exception as exc:
-                WARNINGS.append(f"{canonical}: CI unavailable: {exc}")
+            # Prefer Checks API. Some fine-grained tokens cannot read it;
+            # attempt the classic commit-status endpoint as a safe fallback.
+            ci = read_ci(canonical, sha)
             related_ids = set(related(page, "关联项目")) if page else set()
             related_ids.update(explicit.get(key, ("", []))[1])
             properties = {
