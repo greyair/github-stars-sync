@@ -26,7 +26,6 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event_name != 'schedule' || vars.PROJECT_DASHBOARD_SYNC_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
