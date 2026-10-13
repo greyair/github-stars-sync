@@ -14,7 +14,7 @@ on:
       - 'src/project_dashboard_sync.py'
       - '.github/workflows/sync-project-dashboard.yml'
   schedule:
-    - cron: "23 * * * *"
+    - cron: "23 0,12 * * *"
 
 permissions:
   contents: read
