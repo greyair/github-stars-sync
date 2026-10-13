@@ -172,20 +172,41 @@ def update_dashboard(projects, repos):
                                 notion("PATCH", f"/blocks/{headline['id']}", {size: rich(str(stats[header]))})
                     else:
                         WARNINGS.append(f"Dashboard {header}: heading child not found")
-                    # Third card includes priority breakdown; update only if it is a separate paragraph.
-                    if header == "已分级项目":
-                        value = "P0 {P0} · P1 {P1} · P2 {P2} · P3 {P3}".format(**counts)
-                        for c in children:
-                            if c.get("type") == "paragraph" and re.search(r"P0\s*\d+", block_text(c)):
-                                if block_text(c) != value:
-                                    if not DRY_RUN:
-                                        notion("PATCH", f"/blocks/{c['id']}", {"paragraph": rich(value)})
-                                break
+                    # Update captions as well as the large number.
+                    caption = {
+                        "项目总数": f"已登记 {stats[header]} 个项目",
+                        "仓库总数": f"已登记 {stats[header]} 个仓库",
+                        "已分级项目": "P0 {P0} · P1 {P1} · P2 {P2} · P3 {P3}".format(**counts),
+                    }[header]
+                    for child in children:
+                        if child.get("type") != "paragraph":
+                            continue
+                        existing = block_text(child)
+                        matches = (bool(re.search(r"P0\s*\d+", existing)) if header == "已分级项目"
+                                   else bool(re.search(r"已登记\s*\d+", existing)))
+                        if matches:
+                            if existing != caption:
+                                if DRY_RUN:
+                                    print("DRY_RUN caption", header, caption)
+                                else:
+                                    rich_items = child["paragraph"].get("rich_text") or []
+                                    annotations = rich_items[0].get("annotations") if rich_items else None
+                                    item = {"type": "text", "text": {"content": caption}}
+                                    if annotations:
+                                        item["annotations"] = annotations
+                                    notion("PATCH", f"/blocks/{child['id']}", {"paragraph": {"rich_text": [item]}})
+                            break
+                    else:
+                        WARNINGS.append(f"Dashboard {header}: caption paragraph not found")
             if block.get("has_children") and kind != "callout":
                 stack.append((block["id"], depth + 1))
     for label in stats:
         if label not in found:
             WARNINGS.append(f"Dashboard card missing: {label}")
+
+    if any(w.startswith("Dashboard ") for w in WARNINGS):
+        raise RuntimeError("Dashboard cards could not be fully updated: " +
+                           "; ".join(w for w in WARNINGS if w.startswith("Dashboard ")))
 
 def discover(projects, repo_pages):
     managed = {}
