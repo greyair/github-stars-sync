@@ -1,0 +1,26 @@
+name: Validate Notion Project Dashboard
+
+on:
+  pull_request:
+    paths:
+      - 'src/project_dashboard_sync.py'
+      - 'tests/test_project_dashboard_sync.py'
+      - '.github/workflows/test-project-dashboard.yml'
+      - '.github/workflows/sync-project-dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate Python syntax
+        run: python -m compileall -q src/project_dashboard_sync.py tests/test_project_dashboard_sync.py
+      - name: Unit tests (offline; no secrets)
+        run: python -m unittest discover -s tests -p 'test_project_dashboard_sync.py' -v
