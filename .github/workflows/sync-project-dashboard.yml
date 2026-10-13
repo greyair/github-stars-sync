@@ -1,0 +1,47 @@
+name: Sync Project Dashboard to Notion
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview without changing Notion
+        type: boolean
+        required: false
+        default: true
+  schedule:
+    - cron: "23 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notion-project-dashboard
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate secrets
+        env:
+          GH_PROJECTS_TOKEN: ${{ secrets.GH_PROJECTS_TOKEN }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: |
+          test -n "$GH_PROJECTS_TOKEN" || (echo "Missing GH_PROJECTS_TOKEN" && exit 1)
+          test -n "$NOTION_TOKEN" || (echo "Missing NOTION_TOKEN" && exit 1)
+      - name: Sync managed repositories and dashboard
+        env:
+          GH_PROJECTS_TOKEN: ${{ secrets.GH_PROJECTS_TOKEN }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PROJECTS_DATA_SOURCE_ID: 6c2c8677-6f57-41df-8d42-15cd72c2fcea
+          NOTION_REPOS_DATA_SOURCE_ID: fcab103c-0318-451d-b9b8-8410dc8c0752
+          NOTION_DASHBOARD_PAGE_ID: 3de41bef-3e24-81dc-a0df-e891cc9e001c
+          GITHUB_OWNER: greyair
+          GITHUB_DISCOVERY_TOPIC: notion-managed
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: python src/project_dashboard_sync.py
