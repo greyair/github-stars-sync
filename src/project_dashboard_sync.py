@@ -332,12 +332,14 @@ def main():
                 except Exception as update_exc:
                     WARNINGS.append(f"Could not mark {name}: {update_exc}")
     # Always re-read counts after any new repo creations.
+    dashboard_failed = False
     try:
         update_dashboard(paginate_notion(PROJECTS), paginate_notion(REPOS))
     except Exception as exc:
+        dashboard_failed = True
         WARNINGS.append(f"Dashboard update failed: {exc}")
     print(json.dumps({"managed": len(managed), "synced": synced, "failed": failed, "dry_run": DRY_RUN, "warnings": WARNINGS}, ensure_ascii=False, indent=2))
-    if failed:
+    if failed or dashboard_failed:
         raise SystemExit(1)
 
 if __name__ == "__main__":
